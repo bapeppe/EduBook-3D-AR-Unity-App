@@ -1145,8 +1145,8 @@ MonoBehaviour:
   passwordField: {fileID: 644151464}
   errorText: {fileID: 1950904104}
   loginButton: {fileID: 2080904081}
-  serverIP: 127.0.0.1
-  serverPort: 8090
+  serverUrl: https://laurice-pseudoenthusiastic-palmer.ngrok-free.dev
+  loginEndpoint: /api/auth/login
 --- !u!4 &1128439167
 Transform:
   m_ObjectHideFlags: 0
