@@ -4,15 +4,14 @@ using TMPro;
 using UnityEngine.Networking;
 using System.Collections;
 using System.Text;
+using UnityEngine.SceneManagement; // Importante per cambiare scena
 
-// --- QUESTA È LA PARTE CHE TI MANCAVA ---
 [System.Serializable]
 public class LoginDTO
 {
     public string email;
     public string password;
 }
-// ----------------------------------------
 
 public class AuthManager : MonoBehaviour
 {
@@ -23,9 +22,20 @@ public class AuthManager : MonoBehaviour
     public Button loginButton;
 
     [Header("Network Settings")]
-    // Qui incollerai il link di Ngrok dall'Inspector (senza toccare il codice)
-    public string serverUrl = "https://laurice-pseudoenthusiastic-palmer.ngrok-free.dev"; 
+    // Ricordati di aggiornare questo link se riavvii Ngrok!
+    public string serverUrl = "https://tuo-link-ngrok-qui.ngrok-free.dev"; 
     public string loginEndpoint = "/api/auth/login";
+
+    void Start()
+    {
+        // --- CONTROLLO LOGIN AUTOMATICO ---
+        // Controlliamo se nella memoria del telefono c'è salvato che siamo già entrati
+        if (PlayerPrefs.HasKey("IsLoggedIn") && PlayerPrefs.GetInt("IsLoggedIn") == 1)
+        {
+            Debug.Log("Utente già loggato. Salto al Menu.");
+            SceneManager.LoadScene("MainMenu");
+        }
+    }
 
     public void OnLoginPressed()
     {
@@ -34,58 +44,58 @@ public class AuthManager : MonoBehaviour
 
     IEnumerator LoginRoutine()
     {
-        loginButton.interactable = false;
-        
-        // Reset messaggio errore
+        if(loginButton != null) loginButton.interactable = false;
         if(errorText != null) errorText.gameObject.SetActive(false);
 
-        // Costruzione URL
+        // Pulizia URL
         string fullUrl = serverUrl + loginEndpoint;
-        // Rimuovi eventuali doppi slash se presenti per errore
         if (serverUrl.EndsWith("/") && loginEndpoint.StartsWith("/"))
             fullUrl = serverUrl + loginEndpoint.Substring(1);
 
-        // Creazione JSON usando la classe LoginDTO
+        // Creazione JSON
         LoginDTO userData = new LoginDTO();
         userData.email = emailField.text;
         userData.password = passwordField.text;
 
         string jsonBody = JsonUtility.ToJson(userData);
 
-        Debug.Log($"Tentativo Login su: {fullUrl}");
-        Debug.Log($"Body inviato: {jsonBody}");
-
-        // Preparazione richiesta
         var request = new UnityWebRequest(fullUrl, "POST");
         byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonBody);
         request.uploadHandler = new UploadHandlerRaw(bodyRaw);
         request.downloadHandler = new DownloadHandlerBuffer();
 
-        // Headers essenziali
         request.SetRequestHeader("Content-Type", "application/json");
         request.SetRequestHeader("Accept", "application/json");
 
-        // Invio
         yield return request.SendWebRequest();
 
-        loginButton.interactable = true;
+        if(loginButton != null) loginButton.interactable = true;
 
         if (request.result == UnityWebRequest.Result.Success)
         {
-            Debug.Log("Login Riuscito! Risposta: " + request.downloadHandler.text);
-            UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+            Debug.Log("Login Riuscito!");
+
+            // --- SALVATAGGIO STATO LOGIN ---
+            // Salviamo "1" nella memoria del telefono per dire "Siamo dentro"
+            PlayerPrefs.SetInt("IsLoggedIn", 1);
+            
+            // Opzionale: Se il server ti manda un token, potresti salvare anche quello
+            // PlayerPrefs.SetString("AuthToken", "token_ricevuto...");
+            
+            PlayerPrefs.Save(); // Conferma il salvataggio
+
+            SceneManager.LoadScene("MainMenu");
         }
         else
         {
-            Debug.LogError($"Errore Login: {request.error} (Codice: {request.responseCode})");
-            Debug.LogError($"Risposta Server: {request.downloadHandler.text}");
+            Debug.LogError($"Errore Login: {request.error}");
             
             if(errorText != null)
             {
                 if(request.responseCode == 401)
                     errorText.text = "Email o Password errati!";
                 else
-                    errorText.text = "Errore di connessione (Controlla Ngrok)";
+                    errorText.text = "Errore di connessione.";
                 
                 errorText.gameObject.SetActive(true);
             }
