@@ -19,6 +19,11 @@ public class AWSLoader : MonoBehaviour
     private float lastMouseX;
     private bool isPaused = false; 
 
+    // --- MODIFICA 1: Variabili per gestire lo stato del Reset ---
+    // Questo dice al resto dell'app: "Ho già un modello, non scansionare altro"
+    public bool IsModelLoaded { get; private set; } = false;
+    private bool isDownloading = false;
+
     void Awake()
     {
         if (loadingPanel != null) loadingPanel.SetActive(false);
@@ -27,6 +32,12 @@ public class AWSLoader : MonoBehaviour
 
     public async void DownloadModelAtPosition(string url, Vector3 position, Quaternion rotation)
     {
+        // --- MODIFICA 2: Blocco di sicurezza ---
+        // Se sto già scaricando o ho già un modello, ignora nuove scansioni
+        if (IsModelLoaded || isDownloading) return;
+
+        isDownloading = true; // Inizio download
+        
         if (loadingPanel != null) loadingPanel.SetActive(true);
         if (scanFrame != null) scanFrame.SetActive(false);
         
@@ -50,9 +61,20 @@ public class AWSLoader : MonoBehaviour
                 await FixMaterialsDirectly(currentModel, gltf);
                 RecenterModel(currentModel);
             }
+            
+            // --- MODIFICA 3: Conferma caricamento ---
+            IsModelLoaded = true; // Modello pronto!
+            
             if (toolbarManager != null) toolbarManager.SwitchToViewMode();
         }
+        else
+        {
+            // Se fallisce, resetto per permettere di riprovare
+            IsModelLoaded = false;
+            if(currentModel != null) Destroy(currentModel);
+        }
 
+        isDownloading = false; // Fine processo
         if (loadingPanel != null) loadingPanel.SetActive(false);
     }
 
@@ -80,18 +102,11 @@ public class AWSLoader : MonoBehaviour
         }
     }
 
-    // --- ZOOM FIX (Logica Moltiplicativa) ---
-    // Questa funzione aggira il problema del blocco fotocamera di AR Foundation
     public void ChangeScale(float factor)
     {
         if (currentModel != null)
         {
-            // Invece di sommare (+), moltiplichiamo (*)
-            // Se factor è 1.1, ingrandisce del 10%. Se è 0.9, rimpicciolisce del 10%.
             Vector3 newScale = currentModel.transform.localScale * factor;
-
-            // Limiti di sicurezza (Minimo 0.05, Massimo 3 volte la grandezza originale)
-            // Clamp serve a non far sparire l'oggetto se rimpicciolisci troppo
             float clampedX = Mathf.Clamp(newScale.x, 0.01f, 5.0f);
             float clampedY = Mathf.Clamp(newScale.y, 0.01f, 5.0f);
             float clampedZ = Mathf.Clamp(newScale.z, 0.01f, 5.0f);
@@ -102,7 +117,7 @@ public class AWSLoader : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("Nessun modello caricato da zoomare!");
+            // Debug.LogWarning("Nessun modello caricato da zoomare!");
         }
     }
 
@@ -111,6 +126,13 @@ public class AWSLoader : MonoBehaviour
     public void DestroyModel()
     {
         if (currentModel != null) { Destroy(currentModel); currentModel = null; }
+        
+        // --- MODIFICA 4: Reset completo degli stati ---
+        // Quando premi il cestino, diciamo all'app che siamo pronti a scansionare di nuovo
+        IsModelLoaded = false;
+        isDownloading = false;
+        isPaused = false;
+
         if (loadingPanel != null) loadingPanel.SetActive(false);
         if (scanFrame != null) scanFrame.SetActive(true);
         if (toolbarManager != null) toolbarManager.SwitchToScanMode();
@@ -118,7 +140,6 @@ public class AWSLoader : MonoBehaviour
 
     async Task FixMaterialsDirectly(GameObject model, GltfAsset gltfAsset)
     {
-        // ... (Codice Materiali uguale a prima) ...
         Shader standardShader = Shader.Find("Universal Render Pipeline/Lit");
         if (standardShader == null) standardShader = Shader.Find("Mobile/Diffuse");
         Texture2D textureDiretta = null;
@@ -137,7 +158,6 @@ public class AWSLoader : MonoBehaviour
 
     void RecenterModel(GameObject parentObject)
     {
-        // ... (Codice Recenter uguale a prima) ...
         Bounds bounds = new Bounds(parentObject.transform.position, Vector3.zero);
         Renderer[] renderers = parentObject.GetComponentsInChildren<Renderer>();
         if (renderers.Length == 0) return;

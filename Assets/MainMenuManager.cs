@@ -9,4 +9,9 @@ public class MainMenuManager : MonoBehaviour
         // Carica la scena che si chiama "ARScene"
         SceneManager.LoadScene("ARScene");
     }
+    public void TronaMenu()
+    {
+        // Carica la scena che si chiama "MainMenu"
+        SceneManager.LoadScene("MainMenu");
+    }
 }

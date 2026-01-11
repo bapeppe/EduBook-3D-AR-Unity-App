@@ -14,15 +14,13 @@ public class ARQRScanner : MonoBehaviour
     [Header("Componenti")]
     public ARCameraManager cameraManager;
     public ARRaycastManager raycastManager;
-    public AWSLoader loaderScript;
+    public AWSLoader loaderScript; // Riferimento al cervello che ha il "semaforo"
     public TextMeshProUGUI statusText;
 
-    // MODIFICA 1: Inizia disattivato per sicurezza
     private bool isScanning = false; 
     private MultiFormatReader reader = new MultiFormatReader();
     private List<ARRaycastHit> hits = new List<ARRaycastHit>();
 
-    // MODIFICA 2: Usiamo Start come Coroutine per il ritardo iniziale
     IEnumerator Start()
     {
         if(statusText != null) statusText.text = "Avvio fotocamera...";
@@ -33,11 +31,9 @@ public class ARQRScanner : MonoBehaviour
         isScanning = true;
         if(statusText != null) statusText.text = "Inquadra un QR Code...";
         
-        // Colleghiamo l'evento solo ORA, non prima
         cameraManager.frameReceived += OnCameraFrameReceived;
     }
 
-    // Importante: Rimuovere l'evento quando si chiude/cambia scena
     void OnDestroy()
     {
         cameraManager.frameReceived -= OnCameraFrameReceived;
@@ -45,7 +41,10 @@ public class ARQRScanner : MonoBehaviour
 
     private void OnCameraFrameReceived(ARCameraFrameEventArgs eventArgs)
     {
-        if (!isScanning) return;
+        // --- MODIFICA 1: IL BLOCCO PRINCIPALE ---
+        // Se la variabile locale è spenta OPPURE il Loader ha già un modello caricato...
+        // ...FERMATI SUBITO. Non sprecare risorse a analizzare l'immagine.
+        if (!isScanning || (loaderScript != null && loaderScript.IsModelLoaded)) return;
 
         if (!cameraManager.TryAcquireLatestCpuImage(out XRCpuImage image))
             return;
@@ -55,6 +54,7 @@ public class ARQRScanner : MonoBehaviour
 
     IEnumerator ProcessImage(XRCpuImage image)
     {
+        // Parametri di conversione (ottimizzati per le performance)
         var conversionParams = new XRCpuImage.ConversionParams
         {
             inputRect = new RectInt(0, 0, image.width, image.height),
@@ -75,27 +75,33 @@ public class ARQRScanner : MonoBehaviour
         var luminanceSource = new RGBLuminanceSource(buffer.ToArray(), width, height, RGBLuminanceSource.BitmapFormat.Gray8);
         var binarizer = new HybridBinarizer(luminanceSource);
         var binaryBitmap = new BinaryBitmap(binarizer);
+        
+        // Decodifica QR
         var result = reader.decode(binaryBitmap);
         
         buffer.Dispose();
 
         if (result != null)
         {
+            // --- MODIFICA 2: CONTROLLO DI SICUREZZA FINALE ---
+            // Se nel frattempo (mentre analizzavo) è stato caricato un modello, esci.
+            if (loaderScript != null && loaderScript.IsModelLoaded) yield break;
+
             string scannedText = result.Text;
             
-            // Controllo extra: scansione valida solo se è un link web
             if (!string.IsNullOrEmpty(scannedText) && scannedText.StartsWith("http"))
             {
-                // Lanciamo un raggio dal centro dello schermo
                 Vector2 screenCenter = new Vector2(Screen.width / 2, Screen.height / 2);
                 
                 if (raycastManager.Raycast(screenCenter, hits, TrackableType.PlaneWithinPolygon | TrackableType.FeaturePoint))
                 {
                     Pose hitPose = hits[0].pose;
                     
-                    if(statusText != null) statusText.text = "Trovato! Posiziono...";
+                    if(statusText != null) statusText.text = "Trovato! Scarico...";
                     
-                    isScanning = false; // Stop scansione
+                    isScanning = false; // Spegni la scansione locale
+                    
+                    // Avvia il download
                     loaderScript.DownloadModelAtPosition(scannedText, hitPose.position, hitPose.rotation);
                 }
                 else
@@ -112,21 +118,26 @@ public class ARQRScanner : MonoBehaviour
         image.Convert(paramsData, new System.IntPtr(buffer.GetUnsafePtr()), buffer.Length);
     }
 
+    // Questa funzione viene chiamata dal tasto Reset (o dall'AppToolbar)
     public void RestartExperience()
     {
+        // 1. Resetta il loader (che metterà IsModelLoaded = false)
         loaderScript.DestroyModel();
         
-        // Piccolo ritardo anche nel reset per evitare doppie letture immediate
+        // 2. Riavvia la scansione con un piccolo ritardo per dare tempo all'utente di spostarsi
         StartCoroutine(ResetDelay());
     }
 
     IEnumerator ResetDelay()
     {
-        if(statusText != null) statusText.text = "Reset in corso...";
-        yield return new WaitForSeconds(1.0f);
+        if(statusText != null) statusText.text = "Reset...";
+        
+        // Aspetta 1.5 secondi prima di riattivare gli occhi della camera
+        // Questo evita che rilegga istantaneamente lo stesso QR code se è ancora davanti
+        yield return new WaitForSeconds(1.5f);
         
         isScanning = true;
         hits.Clear();
-        if(statusText != null) statusText.text = "Inquadra un nuovo QR Code...";
+        if(statusText != null) statusText.text = "Scansione attiva";
     }
 }
